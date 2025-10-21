@@ -1396,7 +1396,7 @@ class NBCustomField(NetBoxObject):
             "object_types": list,
             # field name (object_types) for NetBox < 4.0.0
             "content_types": list,
-            "type": ["text", "longtext", "integer", "boolean", "date", "url", "json", "select", "multiselect"],
+            "type": ["text", "longtext", "integer", "decimal", "boolean", "date", "url", "json", "select", "multiselect"],
             "name": 50,
             "label": 50,
             "description": 200,
@@ -1977,15 +1977,76 @@ class NBCluster(NetBoxObject):
 
     def update(self, data=None, read_from_netbox=False, source=None):
 
-        # Add adaption for change in NetBox 4.2.0 Device model
-        if version.parse(self.inventory.netbox_api_version) >= version.parse("4.2.0"):
-            if data.get("site") is not None:
-                data["scope_id"] = data.get("site")
-                data["scope_type"] = "dcim.site"
-                del data["site"]
+        if read_from_netbox is True:
+            super().update(data=data, read_from_netbox=read_from_netbox, source=source)
+            return
 
-            if data.get("scope_id") is not None:
-                data["scope_type"] = "dcim.site"
+        if data is None:
+            data = dict()
+        else:
+            data = dict(data)
+
+        current_version = version.parse(self.inventory.netbox_api_version)
+
+        if current_version >= version.parse("4.2.0"):
+            scope_type_value = data.get("scope_type")
+
+            site_value = data.pop("site", None)
+            if data.get("scope_id") is None and site_value is not None:
+                data["scope_id"] = site_value
+                scope_type_value = self.mapping.get(NBSite)
+
+            scope_value = data.get("scope_id")
+
+            if scope_value is not None:
+                resolved_scope = None
+
+                if isinstance(scope_value, NetBoxObject):
+                    resolved_scope = scope_value
+                else:
+                    candidate_classes = list()
+
+                    if isinstance(scope_type_value, str):
+                        candidate_class = self.mapping.get(scope_type_value)
+                        if candidate_class is not None:
+                            candidate_classes.append(candidate_class)
+
+                    if len(candidate_classes) == 0:
+                        candidate_classes.extend(self.scopes)
+
+                    scope_lookup_value = scope_value
+
+                    if isinstance(scope_value, int):
+                        for scope_class in candidate_classes:
+                            resolved_scope = self.inventory.get_by_id(scope_class, nb_id=scope_value)
+                            if resolved_scope is not None:
+                                break
+                    else:
+                        if isinstance(scope_value, str):
+                            scope_lookup_value = {"name": scope_value}
+
+                        for scope_class in candidate_classes:
+                            try:
+                                resolved_scope = self.inventory.add_update_object(scope_class,
+                                                                                  data=scope_lookup_value,
+                                                                                  source=source)
+                            except Exception:
+                                resolved_scope = None
+
+                            if resolved_scope is not None:
+                                break
+
+                if resolved_scope is not None:
+                    data["scope_id"] = resolved_scope
+                    data["scope_type"] = self.mapping.get(resolved_scope)
+                else:
+                    display_name = self.get_display_name(data=data)
+                    log.warning(f"Unable to resolve scope '{scope_value}' for {self.name} '{display_name}'.")
+                    data.pop("scope_id", None)
+                    data.pop("scope_type", None)
+
+            elif scope_type_value is not None:
+                data.pop("scope_type", None)
 
         super().update(data=data, read_from_netbox=read_from_netbox, source=source)
 
@@ -2019,6 +2080,7 @@ class NBDevice(PrimaryIPMixin, NetBoxObject):
             "asset_tag": 50,
             "primary_ip4": NBIPAddress,
             "primary_ip6": NBIPAddress,
+            "primary_mac_address": NBMACAddress,
             "tags": NBTagList,
             "tenant": NBTenant,
             "custom_fields": NBCustomField
@@ -2067,6 +2129,7 @@ class NBVM(PrimaryIPMixin, NetBoxObject):
             "comments": str,
             "primary_ip4": NBIPAddress,
             "primary_ip6": NBIPAddress,
+            "primary_mac_address": NBMACAddress,
             "site": NBSite,
             "tags": NBTagList,
             "tenant": NBTenant,
@@ -2241,7 +2304,7 @@ class NBIPAddress(NetBoxObject):
             "assigned_object_type": self.mapping.scopes_object_types(self.scopes),
             "assigned_object_id": self.scopes,
             "description": 200,
-            "role": ["loopback", "secondary", "anycast", "vip", "vrrp", "hsrp", "glbp", "carp"],
+            "role": ["loopback", "secondary", "anycast", "vip", "vrrp", "hsrp", "glbp", "carp", "slaac"],
             "dns_name": 255,
             "tags": NBTagList,
             "tenant": NBTenant,
