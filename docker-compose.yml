@@ -1,0 +1,16 @@
+services:
+  netbox-sync:
+    build: .
+    image: netbox-sync:local
+    container_name: netbox-sync
+    restart: unless-stopped
+    environment:
+      # API token NetBox передаём через переменные окружения или файл .env
+      NBS_NETBOX_API_TOKEN: ${NBS_NETBOX_API_TOKEN:-}
+      # Интервал повторного запуска (секунд). 0 или пусто = один запуск.
+      NBS_RUN_INTERVAL: ${NBS_RUN_INTERVAL:-0}
+      # Пример секрета источника: укажите нужный индекс/параметр (см. README, раздел про docker compose)
+      # NBS_SOURCES_1_PASSWORD: ${NBS_SOURCES_1_PASSWORD:-}
+    volumes:
+      - ./config/settings.ini:/app/settings.ini:ro
+    command: ["-c", "/app/settings.ini"]
