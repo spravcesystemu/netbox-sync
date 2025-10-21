@@ -104,7 +104,10 @@ class ConfigParser:
 
             # check if it's an actual file
             if not os.path.isfile(f):
-                self._add_error(f'Config file "{f}" is not an actual file')
+                hint = ""
+                if os.path.isdir(f):
+                    hint = " (it is a directory; check that the host path points to a file when using bind mounts)"
+                self._add_error(f'Config file "{f}" is not an actual file{hint}')
                 self.file_list.remove(f)
                 continue
 
