@@ -35,4 +35,4 @@ COPY --chown=netbox-sync:netbox-sync . .
 ENV PATH=$VENV/bin:$PATH
 ENV TZ=Europe/Berlin
 
-ENTRYPOINT ["python3", "netbox-sync.py"]
+ENTRYPOINT ["python3", "scripts/docker_entrypoint.py"]

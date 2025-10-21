@@ -13,6 +13,7 @@ import pickle
 import pprint
 from datetime import datetime
 from http.client import HTTPConnection
+from urllib.parse import urlparse
 
 import urllib3
 import requests
@@ -41,7 +42,7 @@ class NetBoxHandler:
     """
 
     # minimum API version necessary
-    minimum_api_version = "2.9"
+    minimum_api_version = "4.2.2"
 
     # This tag gets added to all objects create/updated/inherited by this program
     primary_tag = primary_tag_name
@@ -69,9 +70,29 @@ class NetBoxHandler:
 
             HTTPConnection.debuglevel = 1
 
-        proto = "https"
-        if bool(self.settings.disable_tls) is True:
-            proto = "http"
+        host_value = str(getattr(self.settings, "host_fqdn", ""))
+        host_value_stripped = host_value.strip()
+
+        if host_value_stripped == "":
+            do_error_exit("Config option 'host_fqdn' in 'netbox' can't be empty/undefined. "
+                          "Set it in settings.ini or provide NBS_NETBOX_HOST_FQDN.")
+
+        if "netbox.example.com" in host_value_stripped.lower():
+            do_error_exit("Config option 'host_fqdn' in 'netbox' still equals the placeholder "
+                          "'netbox.example.com'. Update settings.ini (section [netbox]) or set "
+                          "NBS_NETBOX_HOST_FQDN to the real URL of your NetBox instance.")
+
+        parsed_host = urlparse(host_value_stripped)
+        explicit_scheme = parsed_host.scheme if parsed_host.scheme else None
+        host_component = parsed_host.netloc if parsed_host.netloc else host_value_stripped
+
+        if parsed_host.path not in ("", "/") and parsed_host.netloc:
+            do_error_exit("Config option 'host_fqdn' must not include a URL path. Use only the host name "
+                          "and optional port (e.g. netbox.local or netbox.local:8443).")
+
+        proto = "http" if bool(self.settings.disable_tls) is True else "https"
+        if explicit_scheme is not None:
+            proto = explicit_scheme
 
         # disable TLS insecure warnings if user explicitly switched off validation
         if bool(self.settings.validate_tls_certs) is False:
@@ -81,7 +102,7 @@ class NetBoxHandler:
         if self.settings.port is not None:
             port = f":{self.settings.port}"
 
-        self.url = f"{proto}://{self.settings.host_fqdn}{port}/api/"
+        self.url = f"{proto}://{host_component}{port}/api/"
 
         self.session = self.create_session()
 
