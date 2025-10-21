@@ -6,3 +6,5 @@
 !netbox-sync.py
 !requirements.txt
 !settings-example.ini
+!scripts/
+!scripts/**
