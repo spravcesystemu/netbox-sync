@@ -7,6 +7,8 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+from __future__ import annotations
+
 import json
 
 from module.netbox import *

@@ -8,7 +8,7 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 import json
-from ipaddress import ip_network, IPv4Network, IPv6Network
+from ipaddress import ip_interface, ip_network, IPv4Network, IPv6Network
 
 # noinspection PyUnresolvedReferences
 from packaging import version
@@ -18,6 +18,153 @@ from module.common.logging import get_logger
 from module.netbox.manufacturer_mapping import sanitize_manufacturer_name
 
 log = get_logger()
+
+
+class PrimaryIPMixin:
+    """Mixin to keep compatibility with unified primary IP field introduced in NetBox 4.x."""
+
+    _unified_primary_ip_version = version.parse("4.0.0")
+
+    def _uses_unified_primary_ip(self) -> bool:
+        inventory_version = getattr(getattr(self, "inventory", None), "netbox_api_version", "0.0.0")
+
+        try:
+            return version.parse(str(inventory_version)) >= self._unified_primary_ip_version
+        except Exception:
+            return False
+
+    def _ensure_primary_ip_data_model(self, force: bool = False) -> None:
+        if force is True or self._uses_unified_primary_ip() is True:
+            self.data_model.setdefault("primary_ip", NBIPAddress)
+
+    def _coerce_primary_ip_value(self, value, read_from_netbox=False, source=None):
+        if value is None or isinstance(value, NetBoxObject):
+            return value
+
+        if isinstance(value, int):
+            value = {"id": value}
+        elif isinstance(value, str):
+            value = {"address": value}
+
+        if isinstance(value, dict) is False:
+            return value
+
+        inventory = getattr(self, "inventory", None)
+        if inventory is None:
+            return value
+
+        return inventory.add_update_object(
+            NBIPAddress,
+            data=value,
+            read_from_netbox=read_from_netbox,
+            source=source
+        )
+
+    @staticmethod
+    def _detect_primary_ip_family(primary_ip_object, original_value=None):
+        address = grab(primary_ip_object, "data.address")
+
+        if address is None and isinstance(original_value, dict):
+            address = original_value.get("address")
+            family = original_value.get("family")
+            if address is None and isinstance(family, dict):
+                family_value = family.get("value")
+                family_label = family.get("label")
+                if family_value in [4, 6]:
+                    return family_value
+                if isinstance(family_label, str):
+                    if "6" in family_label:
+                        return 6
+                    if "4" in family_label:
+                        return 4
+
+        if address is None and isinstance(original_value, str):
+            address = original_value
+
+        if address is None:
+            return None
+
+        try:
+            return ip_interface(address).version
+        except ValueError:
+            return None
+
+    def _normalize_primary_ip_data(self, data=None, read_from_netbox=False, source=None):
+        if self._uses_unified_primary_ip() is False or data is None:
+            return data
+
+        primary_ip_value = data.get("primary_ip")
+
+        if "primary_ip" in data:
+            primary_ip_object = self._coerce_primary_ip_value(primary_ip_value,
+                                                              read_from_netbox=read_from_netbox,
+                                                              source=source)
+            data["primary_ip"] = primary_ip_object
+            family = self._detect_primary_ip_family(primary_ip_object, primary_ip_value)
+
+            if family == 4:
+                data.setdefault("primary_ip4", primary_ip_object)
+                data.setdefault("primary_ip6", None)
+            elif family == 6:
+                data.setdefault("primary_ip6", primary_ip_object)
+                data.setdefault("primary_ip4", None)
+            else:
+                data.setdefault("primary_ip4", None)
+                data.setdefault("primary_ip6", None)
+
+        else:
+            for key in ("primary_ip4", "primary_ip6"):
+                if key not in data:
+                    continue
+
+                ip_object = self._coerce_primary_ip_value(data.get(key),
+                                                          read_from_netbox=read_from_netbox,
+                                                          source=source)
+                data[key] = ip_object
+
+                if data.get("primary_ip") is None and ip_object is not None:
+                    data["primary_ip"] = ip_object
+                    other_key = "primary_ip6" if key.endswith("4") else "primary_ip4"
+                    data.setdefault(other_key, None)
+                    break
+
+            if "primary_ip" not in data:
+                data["primary_ip"] = None
+
+        return data
+
+    def _finalize_primary_ip_tracking(self):
+        if self._uses_unified_primary_ip() is False:
+            return
+
+        for key in ("primary_ip4", "primary_ip6"):
+            while key in self.updated_items:
+                self.updated_items.remove(key)
+            while key in self.unset_items:
+                self.unset_items.remove(key)
+            if key not in self.data:
+                self.data[key] = None
+
+        if self.data.get("primary_ip") is None:
+            self.data["primary_ip4"] = None
+            self.data["primary_ip6"] = None
+
+    def unset_attribute(self, attribute_name=None):
+        if self._uses_unified_primary_ip() is True and attribute_name in ("primary_ip4", "primary_ip6"):
+            self._ensure_primary_ip_data_model()
+            super().unset_attribute("primary_ip")
+            self.data["primary_ip"] = None
+            for key in ("primary_ip4", "primary_ip6"):
+                if key in self.unset_items:
+                    self.unset_items.remove(key)
+                self.data[key] = None
+            return
+
+        super().unset_attribute(attribute_name)
+
+        if self._uses_unified_primary_ip() is True and attribute_name == "primary_ip":
+            self.data["primary_ip4"] = None
+            self.data["primary_ip6"] = None
 
 
 class NetBoxInterfaceType:
@@ -254,55 +401,7 @@ class NetBoxMappings:
 
 
 class NetBoxObject:
-    """
-    Base class for all NetBox object types. Implements all methods used on a NetBox object.
-
-    subclasses need to have the following attributes:
-        name: string
-            name of the object type (i.e. "virtual machine")
-        api_path: string
-            NetBox api path of object type (i.e: "virtualization/virtual-machines")
-        object_type: string
-            NetBox object type (i.e: "virtualization.virtualmachine") to handle scopes for this NetBox object
-        primary_key: string
-            name of the data model key which represents the primary key of this object besides id (i.e: "name")
-        data_model: string
-            dict of permitted data keys and possible values (see description below)
-        prune: bool
-            defines if this object type will be pruned by netbox-sync
-
-    optional attributes
-        secondary_key: string
-            name of the data model key which represents the secondary key of this object besides id
-        enforce_secondary_key: bool
-            if secondary key of an object shall be added to name when get_display_name() method is called
-        min_netbox_version: string
-            defines since which NetBox version this object is available
-        read_only: bool
-            defines if this is a read only object class and can't be changed within netbox-sync
-
-    The data_model attribute needs to be a dict describing the data model in NetBox.
-    Key must be string.
-    Value can be following types:
-        int (instance):
-            value of this attribute must be a string and will be truncated if string exceeds max length of "int"
-        int (class):
-            value must be an integer
-        str (class):
-            can be a string with an undefined length
-        bool (class):
-            attribute must be True or False
-        NetBoxObject subclass:
-            value of this key is a reference to another NetBoxObject of exact defined type
-        list (instance):
-            value can be one of the predefined values in that list.
-        list of NetBoxObject subclasses:
-            value must be an instance of predefined netBoxObject classes in list
-        NBObjectList subclass:
-            value mast be the defined subclass of NBObjectList
-
-
-    """
+    """Base class for NetBox API objects managed by netbox-sync."""
     name = ""
     api_path = ""
     primary_key = ""
@@ -403,6 +502,15 @@ class NetBoxObject:
                     elif isinstance(data_value, NBObjectList):
                         data_value = [repr(x) for x in data_value]
 
+                    elif isinstance(data_value, version.Version):
+                        data_value = str(data_value)
+
+                    else:
+                        try:
+                            json.dumps(data_value)
+                        except TypeError:
+                            data_value = str(data_value)
+
                     data[data_key] = data_value
 
                 value = data
@@ -420,7 +528,7 @@ class NetBoxObject:
         str: object dict as JSON
         """
 
-        return json.dumps(self.to_dict(), sort_keys=True, indent=4)
+        return json.dumps(self.to_dict(), sort_keys=True, indent=4, default=str)
 
     @staticmethod
     def format_slug(text=None, max_len=50):
@@ -1887,7 +1995,7 @@ class NBCluster(NetBoxObject):
         super().resolve_relations()
 
 
-class NBDevice(NetBoxObject):
+class NBDevice(PrimaryIPMixin, NetBoxObject):
     name = "device"
     api_path = "dcim/devices"
     object_type = "dcim.device"
@@ -1915,9 +2023,17 @@ class NBDevice(NetBoxObject):
             "tenant": NBTenant,
             "custom_fields": NBCustomField
         }
+        self._ensure_primary_ip_data_model(force=True)
         super().__init__(*args, **kwargs)
 
     def update(self, data=None, read_from_netbox=False, source=None):
+
+        if data is None:
+            data = dict()
+        else:
+            data = dict(data)
+
+        data = self._normalize_primary_ip_data(data, read_from_netbox=read_from_netbox, source=source)
 
         # Add adaption for change in NetBox 3.6.0 Device model
         if version.parse(self.inventory.netbox_api_version) >= version.parse("3.6.0"):
@@ -1926,9 +2042,10 @@ class NBDevice(NetBoxObject):
                 del data["device_role"]
 
         super().update(data=data, read_from_netbox=read_from_netbox, source=source)
+        self._finalize_primary_ip_tracking()
 
 
-class NBVM(NetBoxObject):
+class NBVM(PrimaryIPMixin, NetBoxObject):
     name = "virtual machine"
     api_path = "virtualization/virtual-machines"
     object_type = "virtualization.virtualmachine"
@@ -1956,6 +2073,7 @@ class NBVM(NetBoxObject):
             "device": NBDevice,
             "custom_fields": NBCustomField
         }
+        self._ensure_primary_ip_data_model(force=True)
         super().__init__(*args, **kwargs)
 
     def get_virtual_disks(self):
@@ -1965,6 +2083,18 @@ class NBVM(NetBoxObject):
                 result_list.append(ip_object)
 
         return result_list
+
+    def update(self, data=None, read_from_netbox=False, source=None):
+
+        if data is None:
+            data = dict()
+        else:
+            data = dict(data)
+
+        data = self._normalize_primary_ip_data(data, read_from_netbox=read_from_netbox, source=source)
+
+        super().update(data=data, read_from_netbox=read_from_netbox, source=source)
+        self._finalize_primary_ip_tracking()
 
 
 class NBVMInterface(NetBoxObject):
