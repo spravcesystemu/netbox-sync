@@ -120,7 +120,6 @@ A short description can be found [here](https://docs.netbox.dev/en/stable/integr
      netbox-sync:local -g -c /config/settings.ini
    ```
 
-   После этого отредактируйте `config/settings.ini`, указав данные NetBox и источников (пример: `nano config/settings.ini`).
    Если при генерации появляется ошибка `permission denied /config/settings.ini`, выдайте каталогу права на запись для пользователя
    с UID 1000 (именно под ним работает контейнер):
 
@@ -204,9 +203,7 @@ docker run --rm \
 
    Отредактируйте файл `config/settings.ini`, указав реальные параметры NetBox и источников.
 
-3. **Создайте `.env` с секретами (опционально).** Чтобы не хранить токены в compose-файле, заведите `.env` рядом с `docker-compose.yml`:
 
-   ```env
    NBS_NETBOX_API_TOKEN=0123456789abcdef0123456789abcdef01234567
    NBS_RUN_INTERVAL=3600
    # Пример секции источника (индекс и ключи должны совпадать с вашим settings.ini)
@@ -276,6 +273,7 @@ docker run --rm \
 
    ```bash
    cat > .env <<'EOF'
+
    NBS_NETBOX_API_TOKEN=0123456789abcdef0123456789abcdef01234567
    NBS_RUN_INTERVAL=3600
    # Если в settings.ini описан источник с индексом 1, можно передать пароль через переменные
