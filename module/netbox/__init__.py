@@ -7,6 +7,10 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
+from module.netbox.constants import PRIMARY_TAG_NAME
+
+primary_tag_name = PRIMARY_TAG_NAME
+
 from module.netbox.object_classes import (
     NetBoxInterfaceType,
     NetBoxObject,
@@ -40,5 +44,3 @@ from module.netbox.object_classes import (
     NBInventoryItem,
     NBPowerPort
 )
-
-primary_tag_name = "NetBox-synced"
