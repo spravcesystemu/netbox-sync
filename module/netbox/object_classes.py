@@ -528,7 +528,7 @@ class NetBoxObject:
         str: object dict as JSON
         """
 
-        return json.dumps(self.to_dict(), sort_keys=True, indent=4)
+        return json.dumps(self.to_dict(), sort_keys=True, indent=4, default=str)
 
     @staticmethod
     def format_slug(text=None, max_len=50):

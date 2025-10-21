@@ -120,6 +120,7 @@ A short description can be found [here](https://docs.netbox.dev/en/stable/integr
      netbox-sync:local -g -c /config/settings.ini
    ```
 
+
    Если при генерации появляется ошибка `permission denied /config/settings.ini`, выдайте каталогу права на запись для пользователя
    с UID 1000 (именно под ним работает контейнер):
 
