@@ -502,6 +502,15 @@ class NetBoxObject:
                     elif isinstance(data_value, NBObjectList):
                         data_value = [repr(x) for x in data_value]
 
+                    elif isinstance(data_value, version.Version):
+                        data_value = str(data_value)
+
+                    else:
+                        try:
+                            json.dumps(data_value)
+                        except TypeError:
+                            data_value = str(data_value)
+
                     data[data_key] = data_value
 
                 value = data
