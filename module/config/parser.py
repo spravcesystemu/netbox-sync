@@ -104,7 +104,10 @@ class ConfigParser:
 
             # check if it's an actual file
             if not os.path.isfile(f):
-                self._add_error(f'Config file "{f}" is not an actual file')
+                hint = ""
+                if os.path.isdir(f):
+                    hint = " (it is a directory; check that the host path points to a file when using bind mounts)"
+                self._add_error(f'Config file "{f}" is not an actual file{hint}')
                 self.file_list.remove(f)
                 continue
 
@@ -280,8 +283,16 @@ class ConfigParser:
 
         section_prefix = f"{env_var_prefix}_{section}".upper()
         for key, value in os.environ.items():
-            if key.upper().startswith(section_prefix):
-                return_data[section][key.replace(f"{section_prefix}_", "", 1).lower()] = value
+            if not key.upper().startswith(section_prefix):
+                continue
+
+            if value is None:
+                continue
+
+            if isinstance(value, str) and value.strip() == "":
+                continue
+
+            return_data[section][key.replace(f"{section_prefix}_", "", 1).lower()] = value
 
         return return_data
 
@@ -296,14 +307,26 @@ class ConfigParser:
 
         # compile dict of relevant env vars and values
         for key, value in os.environ.items():
-            if key.upper().startswith(f"{env_var_source_prefix}_"):
-                env_var_list[key.upper()] = value
-                env_var_names[key.upper()] = key
+            if not key.upper().startswith(f"{env_var_source_prefix}_"):
+                continue
+
+            if value is None:
+                continue
+
+            if isinstance(value, str) and value.strip() == "":
+                continue
+
+            env_var_list[key.upper()] = value
+            env_var_names[key.upper()] = key
 
         for env_var in env_var_list.keys():
 
             # try to find a var which contains the source name
             if env_var.endswith("_NAME"):
+                value = env_var_list.get(env_var)
+                if isinstance(value, str) and value.strip() == "":
+                    continue
+
                 source_indexes.add(env_var.replace(f"{env_var_source_prefix}_", "", 1).replace("_NAME", "", 1))
 
         for source_index in source_indexes:
@@ -315,9 +338,21 @@ class ConfigParser:
             if source_name is None:
                 continue
 
+            if isinstance(source_name, str):
+                source_name = source_name.strip()
+
+            if isinstance(source_name, str) and source_name == "":
+                continue
+
             for key, value in env_var_list.items():
 
                 if key != f"{source_prefix}_NAME":
+                    if value is None:
+                        continue
+
+                    if isinstance(value, str) and value.strip() == "":
+                        continue
+
                     source_env_config[key.replace(f"{source_prefix}_", "", 1).lower()] = value
 
                 if key in env_var_names:
