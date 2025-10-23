@@ -360,6 +360,34 @@ class SourceBase:
 
             interface_object.update(data={"primary_mac_address": primary_mac_address_object}, source=self)
 
+            if isinstance(device_object, (NBDevice, NBVM)):
+                current_primary_mac = grab(device_object, "data.primary_mac_address")
+                should_update_primary_mac = False
+
+                if current_primary_mac is None:
+                    should_update_primary_mac = True
+                elif current_primary_mac is primary_mac_address_object:
+                    should_update_primary_mac = False
+                else:
+                    current_mac_value = None
+
+                    if isinstance(current_primary_mac, NetBoxObject):
+                        current_mac_value = grab(current_primary_mac, "data.mac_address")
+                    elif isinstance(current_primary_mac, dict):
+                        current_mac_value = current_primary_mac.get("mac_address") or \
+                                            current_primary_mac.get("address")
+
+                    if isinstance(current_mac_value, str):
+                        current_mac_value = current_mac_value.lower()
+
+                    target_mac_value = interface_mac_address.lower() if isinstance(interface_mac_address, str) else interface_mac_address
+
+                    if current_mac_value == target_mac_value:
+                        should_update_primary_mac = True
+
+                if should_update_primary_mac is True:
+                    device_object.update(data={"primary_mac_address": primary_mac_address_object}, source=self)
+
         # skip handling of IPs for VMs with not installed/running guest tools
         skip_ip_handling = False
         if type(device_object) == NBVM and grab(vmware_object,'guest.toolsRunningStatus') != "guestToolsRunning":

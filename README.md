@@ -183,7 +183,7 @@ docker run --rm \
 
 ## Запуск через docker compose
 
-Если вы предпочитаете управлять синхронизатором через `docker compose`, в репозитории есть готовый файл `docker-compose.yml`, повторяющий логику одиночного запуска и поддержку переменной `NBS_RUN_INTERVAL` из обёртки `scripts/docker_entrypoint.py`.
+Если вы предпочитаете управлять синхронизатором через `docker compose`, в репозитории есть готовый файл `docker-compose.yml`, повторяющий логику одиночного запуска и поддержку переменной `NBS_RUN_INTERVAL` из обёртки `scripts/docker_entrypoint.py`. Для быстрого старта без изменения существующего `settings.ini` см. также документ [docs/docker-compose-minimal-example.md](docs/docker-compose-minimal-example.md).
 
 1. **Соберите образ.** Выполните команду в каталоге репозитория:
 
@@ -458,7 +458,7 @@ usage: netbox-sync.py [-h] [-c settings.ini [settings.ini ...]] [-g]
 
 Sync objects from various sources to NetBox
 
-Version: 1.8.0 (2025-03-07)
+Version: 1.9.0 (2025-10-21)
 Project URL: https://github.com/bb-ricardo/netbox-sync
 
 options:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Docker entrypoint wrapper to run netbox-sync periodically."""
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -21,8 +22,29 @@ def _run_sync(args: List[str]) -> int:
     return subprocess.call(cmd)
 
 
+def _normalize_args(raw_args: List[str]) -> List[str]:
+    """Return args forwarded to netbox-sync, unwrapping shell wrappers."""
+
+    if not raw_args:
+        return []
+
+    first = raw_args[0]
+    if first in {"sh", "/bin/sh"}:
+        # Compose v1 converts list/str commands into `sh -c ...`. Attempt to
+        # recover the original command line so the sync CLI sees the expected
+        # arguments instead of ``sh``/``-c`` tokens.
+        if len(raw_args) >= 2 and raw_args[1] == "-c":
+            command_str = " ".join(raw_args[2:])
+            if not command_str:
+                return []
+            return shlex.split(command_str)
+        return raw_args[1:]
+
+    return raw_args
+
+
 def main() -> int:
-    args = sys.argv[1:]
+    args = _normalize_args(sys.argv[1:])
     interval = _parse_interval(os.environ.get("NBS_RUN_INTERVAL"))
 
     # Allow graceful termination when running in a loop.
